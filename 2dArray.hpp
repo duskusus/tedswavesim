@@ -5,17 +5,11 @@
 #include <cassert>
 #include <immintrin.h>
 #include "util.h"
+#include <future>
 
-inline float dot8(__m256 v1, __m256 v2)
-{
-    __m256 v3 = _mm256_mul_ps(v1, v2);
-    __m128 l = _mm256_extractf128_ps(v3, 0);
-    __m128 h = _mm256_extractf128_ps(v3, 1);
-    __m128 res = _mm_hadd_ps(l, h);
-    return res[0] + res[1] + res[2] + res[3];
-}
 template <typename T>
 class n2dArray{
+    public:
     const uint32_t M; //rows
     const uint32_t N; //columns
     public:
@@ -40,6 +34,9 @@ class n2dArray{
     void operator=(const n2dArray<T> &b) {
         assert(b.M == M && b.N == N);
         memcpy(data, b.data, size * sizeof(T));
+    }
+    T &operator[](int i) {
+        return data[i];
     }
     n2dArray operator*(T x) {
         n2dArray out = *this;
@@ -87,21 +84,26 @@ class n2dArray{
         return result;
     }
 
-    friend void scalar_laplacian(const n2dArray<T> &in, n2dArray<T> &out) {
+    static void thread_scalar_laplacian(const n2dArray<T> &in, n2dArray<T> &out, int istart, int iend) {
+        const T *d = in.data;
+
+        for(int i = istart; i < iend; i++) {
+            out.data[i] = -4 * d[i] + d[i - 1] + d[i + 1] + d[i - in.N] + d[i + in.N];
+        }
+        return;
+    }
+    friend void scalar_laplacian(const n2dArray<T> &in, n2dArray<T> &out, int threads, std::future<void> *futures) {
         
         assert(in.M == out.M & in.N == out.N);
+        //thread_scalar_laplacian(in, out, in.N, in.size - in.N);
+        auto op = [&in, &out](int istart, int iend){thread_scalar_laplacian(in, out, istart, iend);};
 
-        const __m256 kern = _mm256_set_ps(0, 1, 0, 1, -4, 1, 0, 1);
-        const T *d = in.data;
-        for(int i = 1; i < in.M - 1; i++) {
-            for(int j = 1; j < in.N - 1; j++) {
-                const uint32_t index = i * in.N + j;
-                //const __m256 vec = _mm256_set_ps(0, d[index - in.N], 0, d[index - 1], d[index], d[index + 1], 0, d[index + in.N]);
-                //out.data[index] = dot8(vec, kern);
+        int safe_size = in.size - 2 * in.N;
 
-                out.data[index] = -4 * d[index] + d[index - 1] + d[index + 1] + d[index - in.N] + d[index + in.N];
-                }
+        for(int t = 0; t < threads; t++) {
+            futures[t] = std::async(std::launch::async, op, t * safe_size/threads + in.N, (t + 1) * safe_size/threads + in.N);
         }
+        futures[threads-1].wait();
     }
     void operator+=(const n2dArray<T> &b) {
         assert(M == b.M && N == b.N);
@@ -110,8 +112,7 @@ class n2dArray{
         }
     }
     T at(int x, int y) {
-        assert(x < N && y < M);
-        return data[x * N + y];
+        return data[(x % N) * N + (y % M)];
     }
     friend T sum(const n2dArray<T> &in) {
         T r_sum = 0;

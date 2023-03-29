@@ -1,10 +1,9 @@
 CXX=g++
 
 test: main.o
-	$(CXX) -g main.o -lm -lSDL2 -o test
+	$(CXX) -g main.o -lm -lSDL2 -o test -pthread
 
 main.o: main.cpp 2dArray.hpp
-	$(CXX) -c -g -O3 main.cpp -o main.o -mavx
-
+	$(CXX) -c -g -O2 -pthread -ffast-math main.cpp -o main.o
 clean:
 	rm *.o test
