@@ -58,24 +58,54 @@ int main()
     //scalar_laplacian(D, dD, threads, futures);
     //H += dD;
     //D += H * (v * v);
-    
-    const float v2 = (v * v);
-    for(int i = D.N; i < D.size - D.N; i++) {
-        nD[i] = D[i];
-        float laplace = -4 * D[i] + D[i - D.N] + D[i - 1] + D[i+1] + D[i + D.N];
-        H[i] += laplace;
-        nD[i] += H[i] * v2;
+    __m256 min4 = _mm256_set1_ps(-4);
+    __m256 v2 = _mm256_set1_ps(v * v);
+
+    __m256 di = _mm256_load_ps(&D[D.N-8]);
+    __m256 ndi;
+
+    __m256 l_up;
+    __m256 l_left;
+    __m256 l_right = _mm256_load_ps(&D[D.N]);
+    __m256 l_down;
+
+    for(int i = D.N; i < D.size - 2 * D.N; i+=8) {
+        //nD[i] = D[i];
+        l_left = di;
+        di = l_right;
+        l_right = _mm256_load_ps(&D[i + 8]);
+        __m256 h = _mm256_load_ps(&H[i]);
+        //float laplace = -4 * D[i] + D[i - D.N] + D[i - 1] + D[i+1] + D[i + D.N];
+        //H[i] += laplace;
+        l_up = _mm256_load_ps(&D[i-D.N]);
+        l_down = _mm256_load_ps(&D[i+D.N]);
+
+        h = _mm256_fmadd_ps(di, min4, h);
+        h = _mm256_add_ps(h, l_up);
+        h = _mm256_add_ps(h, l_left);
+        h = _mm256_add_ps(h, l_right);
+        h = _mm256_add_ps(h, l_down);
+        _mm256_store_ps(&H[i], h);
+
+        //nD[i] += H[i] * v2;
+        __m256 ndi = _mm256_fmadd_ps(h, v2, di);
+        _mm256_store_ps(&nD[i], ndi);
+
     }
     D = nD;
 
-    D_out = D.scale(winsizex, winsizey);
     SDL_LockSurface(surf);
-
-    for(int i = 0; i < D_out.size; i++) {
-        float Di = D_out.data[i] / 15;
+    for(int y = 0; y < winsizey; y++) {
+        for(int x = 0; x < winsizex; x++) {
+        const int smalli = x + y * winsizex;
+        const int round_x = (x * sizex + sizex / 2) / winsizex;
+        const int round_y = (y * sizey + sizey / 2) / winsizey;
+        const int i = round_x + round_y * sizex;
+        float Di = D[i] / 15;
         float red = -min<float>(Di, 0);
         float green = max<float>(Di, 0);
-        pixels[i] = int(255 * clamp<float>(red, 0.0, 1.0)) | (int(255 * clamp<float>(green, 0.0, 1.0)) << 8);
+        pixels[smalli] = int(255 * clamp<float>(red, 0.0, 1.0)) | (int(255 * clamp<float>(green, 0.0, 1.0)) << 8);
+        }
     }
     SDL_UnlockSurface(surf);
     SDL_UpdateWindowSurface(win);
@@ -86,4 +116,6 @@ int main()
     printf("Frame Took %f ms\n", avg);
 }
 
-//old
+//old scaling takes 8.3 ms / frame at 1800px
+//new scaling takes 7.9
+//before avx 7.5

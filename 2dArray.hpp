@@ -7,6 +7,12 @@
 #include "util.h"
 #include <future>
 
+#define ALIGN_MASK uint64_t(0xffffffffffffffe0)
+void *align(void *in) {
+    void *out = (void *) ((((uint64_t)in) & ALIGN_MASK) + 32);
+    assert(out != 0);
+    return out;
+}
 template <typename T>
 class n2dArray{
     public:
@@ -15,27 +21,31 @@ class n2dArray{
     public:
     const uint32_t size = M * N;
     T *data = nullptr;
+    T *allocation = nullptr;
+
     n2dArray(uint32_t p_M, uint32_t p_N, T *p_data = nullptr) :
     M(p_M), N(p_N) {
-        data = new T[M * N];
-        
+        allocation = (T*)malloc(sizeof(T) * size + 64);
+        data = (T *)align(allocation);
+        printf("data: %lu\n", data);
         if(p_data) {
             memcpy(data, p_data, sizeof(T) * M * N);
         }
     }
     n2dArray(const n2dArray &b):
     M(b.M), N(b.N) {
-        data = new T[M * N];
-        memcpy(data, b.data, b.size * sizeof(T));
+        allocation = (T*)malloc(sizeof(T) * size + 64);
+        data = (T *) align(allocation);
+        memcpy(allocation, b.allocation, b.size * sizeof(T) + 64);
     }
     ~n2dArray() {
-        delete[] data;
+        free(allocation);
     }
     void operator=(const n2dArray<T> &b) {
         assert(b.M == M && b.N == N);
-        memcpy(data, b.data, size * sizeof(T));
+        memcpy(allocation, b.allocation, size * sizeof(T) + 64);
     }
-    T &operator[](int i) {
+    __attribute__((always_inline)) T &operator[](int i) {
         return data[i];
     }
     n2dArray operator*(T x) {
