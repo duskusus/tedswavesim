@@ -58,17 +58,19 @@ int main()
     //scalar_laplacian(D, dD, threads, futures);
     //H += dD;
     //D += H * (v * v);
-    float v2 = v * v;
-
-    for(int i = D.N; i < D.size - 2 * D.N; i++) {
+    
+    const float v2 = (v * v);
+    for(int i = D.N; i < D.size - D.N; i++) {
         nD[i] = D[i];
         float laplace = -4 * D[i] + D[i - D.N] + D[i - 1] + D[i+1] + D[i + D.N];
         H[i] += laplace;
         nD[i] += H[i] * v2;
     }
     D = nD;
+
     D_out = D.scale(winsizex, winsizey);
     SDL_LockSurface(surf);
+
     for(int i = 0; i < D_out.size; i++) {
         float Di = D_out.data[i] / 15;
         float red = -min<float>(Di, 0);
@@ -84,6 +86,4 @@ int main()
     printf("Frame Took %f ms\n", avg);
 }
 
-//old scaling takes 8.3 ms / frame at 1800px
-//new scaling takes 7.9
-//before avx 7.5
+//o
